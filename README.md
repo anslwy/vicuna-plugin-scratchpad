@@ -8,7 +8,7 @@ A notes panel in Vicuna's side bar: one scratchpad per workspace, saved automati
 
 A plugin is a GitHub repo whose latest release carries `vicuna-plugin.json` plus every file it lists (Vicuna falls back to the default branch when there is no release).
 
-```json
+```jsonc
 {
   "id": "scratchpad",                 // lowercase letters, digits, dashes
   "name": "Scratchpad",
