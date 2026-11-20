@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scratchpad</title>
+<style>
+  :root { --bg: #fff; --text: #222; --muted: #888; --border: #ddd; --accent: #ef6c00; --accent-fg: #fff; --card: #fff; --font: system-ui, sans-serif; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+  .where b { color: var(--text); font-weight: 600; }
+  .status { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .status.saved { color: var(--accent); }
+  textarea { flex: 1; resize: none; border: 0; outline: none; padding: 10px 12px; background: var(--bg); color: var(--text);
+             font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.55; }
+  textarea::placeholder { color: var(--muted); }
+  footer { display: flex; justify-content: space-between; padding: 6px 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+  button { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <span class="where" id="where">Loading…</span>
+  <span class="status" id="status"></span>
+</header>
+<textarea id="note" placeholder="Notes for this workspace — saved automatically." spellcheck="false" disabled></textarea>
+<footer>
+  <span id="count">0 words</span>
+  <button id="clear" type="button" title="Clear this workspace's note">Clear</button>
+</footer>
+<script>
+  // --- tiny client for Vicuna's panel API (postMessage to the parent) ---
+  let seq = 0;
+  const pending = new Map();
+  function vicuna(method, params) {
+    return new Promise((resolve, reject) => {
+      const id = ++seq;
+      pending.set(id, { resolve, reject });
+      parent.postMessage({ vicuna: 1, id, method, params }, "*");
+    });
+  }
+  const handlers = { theme: [], context: [] };
+  addEventListener("message", (e) => {
+    if (e.source !== parent) return;
+    const d = e.data;
+    if (!d || d.vicuna !== 1) return;
+    if (d.event) return (handlers[d.event] || []).forEach((h) => h(d.data));
+    const p = pending.get(d.id);
+    if (!p) return;
+    pending.delete(d.id);
+    d.error ? p.reject(new Error(d.error)) : p.resolve(d.result);
+  });
+
+  // --- theme: copy the app's CSS variables ---
+  function applyTheme(t) {
+    const r = document.documentElement.style;
+    const v = t.vars || {};
+    for (const k of ["--bg", "--text", "--muted", "--border", "--accent", "--accent-fg", "--card"]) if (v[k]) r.setProperty(k, v[k]);
+    if (v["--font-family"]) r.setProperty("--font", v["--font-family"]);
+    document.documentElement.style.colorScheme = t.base;
+  }
+
+  // --- the note: one per workspace (or one shared note outside a workspace) ---
+  const note = document.getElementById("note");
+  const status = document.getElementById("status");
+  let key = null, timer = null, dirty = false;
+  const keyFor = (ctx) => "note:" + (ctx.workspace || "(no workspace)");
+  function count() {
+    const n = note.value.trim() ? note.value.trim().split(/\s+/).length : 0;
+    document.getElementById("count").textContent = n + (n === 1 ? " word" : " words");
+  }
+  async function save() {
+    clearTimeout(timer);
+    if (!dirty || !key) return;
+    dirty = false;
+    try {
+      await vicuna("storage.set", { key, value: note.value });
+      status.textContent = "Saved"; status.className = "status saved";
+    } catch (e) {
+      status.textContent = "Not saved: " + e.message; status.className = "status";
+      dirty = true;
+    }
+  }
+  async function load(ctx) {
+    const next = keyFor(ctx);
+    if (next === key) return;
+    await save();
+    key = next;
+    const name = ctx.workspace ? ctx.workspace.split(/[\\/]/).filter(Boolean).pop() : null;
+    document.getElementById("where").innerHTML = "";
+    const where = document.getElementById("where");
+    where.append(name ? "Workspace " : "", Object.assign(document.createElement("b"), { textContent: name || "No workspace" }));
+    where.title = ctx.workspace || "";
+    note.disabled = true;
+    const text = await vicuna("storage.get", { key });
+    note.value = typeof text === "string" ? text : "";
+    note.disabled = false;
+    status.textContent = ""; count();
+  }
+  note.addEventListener("input", () => {
+    dirty = true; count();
+    status.textContent = "Editing…"; status.className = "status";
+    clearTimeout(timer); timer = setTimeout(save, 400);
+  });
+  note.addEventListener("blur", save);
+  document.getElementById("clear").addEventListener("click", () => { note.value = ""; dirty = true; count(); save(); note.focus(); });
+
+  handlers.theme.push(applyTheme);
+  handlers.context.push((ctx) => load(ctx));
+  vicuna("getTheme").then(applyTheme);
+  vicuna("getContext").then(load);
+</script>
+</body>
+</html>

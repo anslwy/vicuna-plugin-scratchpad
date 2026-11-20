@@ -1,0 +1,9 @@
+{
+  "id": "scratchpad",
+  "name": "Scratchpad",
+  "version": "1.0.0",
+  "description": "A notes panel in the side bar: one scratchpad per workspace, saved in Vicuna and themed to match the app.",
+  "panels": [
+    { "id": "notes", "title": "Scratchpad", "icon": "scratchpad.svg", "entry": "scratchpad.html" }
+  ]
+}
